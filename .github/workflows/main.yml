@@ -1,0 +1,72 @@
+name: Juice Shop DevSecOps Demo
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Run Unit Tests
+      run: npm test
+
+  sast:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Run CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: security-extended
+
+  dependency-scan:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Run Dependency-Check
+      run: |
+        docker run --rm -v $(pwd):/src owasp/dependency-check --scan /src --format HTML --out /src/dependency-check-report.html
+
+  dast:
+    runs-on: ubuntu-latest
+    needs: dependency-scan
+
+    steps:
+    - name: Deploy Juice Shop in Docker
+      run: |
+        docker-compose up -d
+
+    - name: Run OWASP ZAP Scan
+      run: |
+        docker run --rm -t owasp/zap2docker-stable zap-baseline.py -t http://localhost:3000 -r zap-report.html
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: dast
+
+    steps:
+    - name: Deploy Application
+      run: |
+        docker-compose up -d
